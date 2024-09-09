@@ -5,25 +5,20 @@ import Crypto
 final class UserController: Sendable {
     
     func setupRoutes(app: Application) {
-            app.post("register", use: register)
-            app.post("login", use: login)
-            app.delete("delete", ":username", use: deleteUser)
-        }
+        app.post("register", use: register)
+        app.post("login", use: login)
+        app.delete("delete", ":username", use: deleteUser)
+    }
     
     @Sendable
     private func register(req: Request) async throws -> Response {
-        let user = try req.content.decode(User.self) //let or var?
+        let user = try req.content.decode(User.self)
 
-        // Hash da senha antes de salvar o usuário
-        user.password = try Bcrypt.hash(user.password)
+        user.password = try hashPassword(user.password)
         
         try await user.create(on: req.db)
         
-        let response = Response(status: .created)
-        response.body = .init(string: "User registered")
-        response.headers.replaceOrAdd(name: .contentType, value: "text/plain")
-        
-        return response
+        return  jsonResponse(status: .created, message: "User registred")
     }
     
     @Sendable
@@ -33,42 +28,52 @@ final class UserController: Sendable {
         guard let user = try await User.query(on: req.db)
                 .filter(\.$username == loginData.username)
                 .first(),
-              try Bcrypt.verify(loginData.password, created: user.password) else {
+              try verifyPassword(loginData.password, against: user.password) else {
             throw Abort(.unauthorized, reason: "Invalid credentials")
         }
 
-        // Definindo a data de expiração (por exemplo, 1 hora a partir do momento atual)
-        let expirationTime = Date().addingTimeInterval(3600) // 1 hora (3600 segundos)
-
-        // Gerando o token JWT com a expiração
-        let claims = JWTClaims(username: user.username, exp: .init(value: expirationTime))
-        let token = try req.jwt.sign(claims)
-
-        let response = Response(status: .ok)
-        response.body = .init(string: token)
-        response.headers.replaceOrAdd(name: .contentType, value: "text/plain")
-
-        return response
+        // Gera o token JWT com expiração e retorna a resposta
+        let token = try createJWTToken(for: user, req: req)
+        
+        return  jsonResponse(status: .ok, message: token)
     }
     
     @Sendable
     func deleteUser(req: Request) async throws -> Response {
-            guard let username = req.parameters.get("username") else {
-                throw Abort(.badRequest, reason: "Username parameter is missing")
-            }
-
-            guard let user = try await User.query(on: req.db)
-                    .filter(\.$username == username)
-                    .first() else {
-                throw Abort(.notFound, reason: "User not found")
-            }
-
-            try await user.delete(on: req.db)
-
-            let response = Response(status: .ok)
-            response.body = .init(string: "User \(username) deleted")
-            response.headers.replaceOrAdd(name: .contentType, value: "text/plain")
-
-            return response
+        guard let username = req.parameters.get("username"),
+              let user = try await User.query(on: req.db)
+                .filter(\.$username == username)
+                .first() else {
+            throw Abort(.notFound, reason: "User not found")
         }
+
+        try await user.delete(on: req.db)
+
+        return  jsonResponse(status: .ok, message: "User \(username) deleted")
+    }
+
+    private func createJWTToken(for user: User, req: Request) throws -> String {
+        let expirationTime = Date().addingTimeInterval(3600) // 1 hora
+        let claims = JWTClaims(username: user.username, exp: .init(value: expirationTime))
+        
+        return try req.jwt.sign(claims)
+    }
+
+    private func hashPassword(_ password: String) throws -> String {
+        try Bcrypt.hash(password)
+    }
+
+    private func verifyPassword(_ password: String, against hashed: String) throws -> Bool {
+        try Bcrypt.verify(password, created: hashed)
+    }
+
+    private func jsonResponse(status: HTTPResponseStatus, message: String) -> Response {
+        let response = Response(status: status)
+        let jsonBody = "message: \(message)"
+        
+        response.body = .init(string: jsonBody)
+        response.headers.replaceOrAdd(name: .contentType, value: "application/json")
+        
+        return response
+    }
 }

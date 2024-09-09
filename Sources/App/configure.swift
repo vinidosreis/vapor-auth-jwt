@@ -1,4 +1,3 @@
-import Fluent
 import FluentPostgresDriver
 import Vapor
 
@@ -16,5 +15,6 @@ public func configure(_ app: Application) async throws {
     app.migrations.add(CreateUser())
 
     try await app.autoMigrate().get()
+    
     try routes(app)
 }
