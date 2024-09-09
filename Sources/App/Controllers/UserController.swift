@@ -7,7 +7,7 @@ final class UserController: Sendable {
     func setupRoutes(app: Application) {
         app.post("register", use: register)
         app.post("login", use: login)
-        app.delete("delete", ":username", use: deleteUser)
+        app.delete("delete", use: deleteUser)
     }
     
     @Sendable
@@ -31,8 +31,7 @@ final class UserController: Sendable {
               try verifyPassword(loginData.password, against: user.password) else {
             throw Abort(.unauthorized, reason: "Invalid credentials")
         }
-
-        // Gera o token JWT com expiração e retorna a resposta
+        
         let token = try createJWTToken(for: user, req: req)
         
         return  jsonResponse(status: .ok, message: token)
@@ -40,16 +39,18 @@ final class UserController: Sendable {
     
     @Sendable
     func deleteUser(req: Request) async throws -> Response {
-        guard let username = req.parameters.get("username"),
-              let user = try await User.query(on: req.db)
-                .filter(\.$username == username)
-                .first() else {
-            throw Abort(.notFound, reason: "User not found")
+        let loginData = try req.content.decode(LoginData.self)
+
+        guard let user = try await User.query(on: req.db)
+                .filter(\.$username == loginData.username)
+                .first(),
+              try Bcrypt.verify(loginData.password, created: user.password) else {
+            throw Abort(.unauthorized, reason: "Invalid credentials")
         }
 
         try await user.delete(on: req.db)
 
-        return  jsonResponse(status: .ok, message: "User \(username) deleted")
+        return jsonResponse(status: .ok, message: "User \(loginData.username) deleted")
     }
 
     private func createJWTToken(for user: User, req: Request) throws -> String {
