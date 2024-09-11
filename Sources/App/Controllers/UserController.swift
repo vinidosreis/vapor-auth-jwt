@@ -70,9 +70,16 @@ final class UserController: Sendable {
 
     private func jsonResponse(status: HTTPResponseStatus, message: String) -> Response {
         let response = Response(status: status)
-        let jsonBody = "message: \(message)"
+        let jsonBody: [String: String] = ["token": message]
+        let jsonData: Data
         
-        response.body = .init(string: jsonBody)
+        do {
+            jsonData = try JSONEncoder().encode(jsonBody)
+        } catch {
+            jsonData = Data()
+        }
+        
+        response.body = .init(data: jsonData)
         response.headers.replaceOrAdd(name: .contentType, value: "application/json")
         
         return response
