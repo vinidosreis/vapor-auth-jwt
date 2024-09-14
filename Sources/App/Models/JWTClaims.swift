@@ -5,10 +5,10 @@
 //  Created by Vinícius dos Reis on 02/09/24.
 //
 
+import Vapor
 import JWT
 
-struct JWTClaims: JWTPayload {
-    
+struct JWTClaims: JWTPayload, Authenticatable {
     var username: String
     var exp: ExpirationClaim
 
